@@ -1,5 +1,5 @@
-/* Copyright 2019 Esri
- * Beda Kuster
+/* Copyright 2021 Esri
+ * Michael Van den Bergh
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,47 +22,31 @@ export const fetchPagedFeatures = async (
   query,
   inputTime,
 ) => {
-  let exceededTransferLimit = true;
-  const features = [];
-  let spatialReference = null;
-  let objectIdFieldName = null;
+  let { resultOffset = 0, resultRecordCount } = query;
+  let features = [];
+  let result;
 
-  let recordCount = query.resultRecordCount;
-  let offset = query.resultOffset;
-
-  while (exceededTransferLimit) {
+  do {
     // eslint-disable-next-line no-await-in-loop
-    const findResult = await requestWithRetry(
+    result = await requestWithRetry(
       url,
       authentication,
-      query,
+      { ...query, resultOffset, resultRecordCount },
       inputTime,
     );
 
-    features.push(...findResult.features);
-    spatialReference = findResult.spatialReference;
-    objectIdFieldName = findResult.objectIdFieldName;
+    features = features.concat(result.features);
 
-    exceededTransferLimit = findResult.exceededTransferLimit === true;
-
-    if (exceededTransferLimit) {
-      const featureCount = findResult.features.length;
-
-      // subtracting already fetched feature count, if a .limit was set
-      if (recordCount > 0) {
-        recordCount -= featureCount;
-
-        if (recordCount <= 0) break;
-      }
-
-      if (isNaN(offset)) offset = 0;
-
-      offset += featureCount;
-
-      query.resultRecordCount = recordCount;
-      query.resultOffset = offset;
+    resultOffset += result.features.length;
+    if (resultRecordCount !== undefined) {
+      resultRecordCount -= features.length;
     }
-  }
+  } while (
+    result.exceededTransferLimit &&
+    (resultRecordCount > 0 || resultRecordCount === undefined)
+  );
+
+  const { spatialReference, objectIdFieldName } = result;
 
   return {
     features,
